@@ -58,3 +58,30 @@ We can get a subvector from a vector with `subvec` function. We need to pass the
 * **sparse**: cant insert or delete elements in the middle.
 * **queues**: not efficient to be used as queues.
 * **sets**: `contains?` returns the *key*, not the *value* (in vector case, the index number).
+
+## Lists
+* used almost exclusively to represent code form.
+* add something to the front (left side), and better with `conj` not `cons`.
+* can also be used as stacks.
+
+## Queues
+* Clojure provides specific types for queue: `PersistentQueue`.
+* add to the end with `conj`, remove the front with `pop`, get the front without removal with `peek`.
+* internally implemented using two collections, seq in front, vector in rear.
+
+## Sets
+* similar to mathematical sets, only contains unique elements.
+* can create sorted set with `sorted-set`, as long as the arguments are comparable.
+* each element in a set behaves as **key and value**.
+* can use many functions `clojure.set`
+
+## Maps
+
+### Hash map
+* most ubiquitous form of map.
+
+### Sorted map
+* can be used to store ordered key/value pairs.
+
+### Array map
+* ensures insertion ordering

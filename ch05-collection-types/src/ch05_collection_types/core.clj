@@ -1,4 +1,5 @@
 (ns ch05-collection-types.core
+  (:require [clojure.set])
   (:gen-class))
 
 (defn -main
@@ -110,3 +111,93 @@ a-to-j
 ;; vector as map entries
 (doseq [[dimension amount] {:width 10, :height 20, :depth 15}]
   (println (str (name dimension) ":") amount "inches"))
+
+;;;;;;;;;;;;;;;;;;;;;; lists ;;;;;;;;;;;;;;;;;;;;;;;
+(cons 1 '(2 3))
+
+(conj '(2 3) 1) ;; prefer this one
+
+;;;;;;;;;;;;;;;;;;;;;; queues ;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defmethod print-method clojure.lang.PersistentQueue
+  [q, w]
+  (print-method '<- w)
+  (print-method (seq q) w)
+  (print-method '-< w))
+
+;; empty queue
+clojure.lang.PersistentQueue/EMPTY
+
+(def schedule
+  (conj clojure.lang.PersistentQueue/EMPTY
+        :wake-up :shower :brush-teeth))
+
+(peek schedule)
+
+(pop schedule)
+
+;;;;;;;;;;;;;;;;;;;;;;;; sets ;;;;;;;;;;;;;;;;;;;;;;;;;
+(#{:a :b :c :d} :c)
+(get #{:a 1 :b 2} :z :nothing)
+
+;; sorted set
+(sorted-set :b :c :a)
+(sorted-set [3 4] [1 2] [0 1])
+
+;; contains?
+(contains? #{1 2 3 4} 4) ;; find the value 4
+(contains? [1 2 3 4] 4) ;; find the index 4, which doesnt exist
+
+;; intersection
+(clojure.set/intersection #{:humans :fruit-bats :zombies}
+                          #{:chupacabra :zombies :humans})
+
+(clojure.set/intersection #{:pez :gum :dots :skor}
+                          #{:pez :skor :pocky}
+                          #{:pocky :gum :skor})
+
+;; union
+(clojure.set/union #{:humans :fruit-bats :zombies}
+                   #{:chupacabra :zombies :humans})
+
+;;difference
+(clojure.set/difference #{1 2 3 4} #{3 4 5 6}) ;; #{1 2}
+
+;;;;;;;;;;;;;;;;;;;;;; maps ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; hash map
+(hash-map :a 1, :b 2, :c 3, :d 4)
+(apply hash-map [:a 1 :b 2])
+(zipmap [:x :y] [1 2])
+
+;; sorted map
+(sorted-map :thx 1128 :r2d 2)
+(sorted-map "bac" 2 "abc" 9)
+
+;; array map
+(array-map :a 1, :c 3, :d 6)
+
+
+;;;; locate the positional index of an element in a sequence
+
+;; first version
+(defn pos [e coll]
+  (let [cmp (if (map? coll)
+              #(= (second %1) %2)
+              #(= %1 %2))]
+    (loop [s coll idx 0]
+      (when (seq s)
+        (if (cmp (first s) e)
+          (if (map? coll)
+            (first (first s))
+            idx)
+          (recur (next s) (inc idx)))))))
+
+;; better version
+(defn index [coll]
+  (cond
+    (map? coll) (seq coll)
+    (set? coll) (map vector coll coll)
+    :else (map vector (iterate inc 0) coll)))
+
+(defn pos' [pred coll]
+  (for [[i v] (index coll) :when (pred v)] i))
