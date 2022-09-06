@@ -1,6 +1,8 @@
 (ns ch08-macros.core
   (:require [clojure.walk :as walk])
   (:use [clojure.xml :as xml])
+  (:import [java.io BufferedReader InputStreamReader]
+           [java.net URL])
   (:gen-class))
 
 (defn -main
@@ -138,4 +140,103 @@
 (:tag d)
 (:tag (first (:content d)))
 
-(xml/emit d)
+;;(xml/emit d)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmacro resolution [] `x)
+(macroexpand '(resolution))
+
+(def x 9)
+;; => #'ch08-macros.core/x
+(let [x 109] (resolution))
+;; => 9
+
+(defmacro awhen [expr & body]
+  `(let [~'it ~expr]
+     (if ~'it
+       (do ~@body))))
+
+(awhen [1 2 3] (it 2))
+;; => 3
+
+(awhen nil (println "Will never get here"))
+;; => nil
+
+(awhen 1 (awhen 2 [it]))
+;; => [2]
+
+(defn joc-www []
+  (-> "http://www.joyofclojure.com/hello" URL.
+      .openStream
+      InputStreamReader.
+      BufferedReader.))
+
+;;(let [stream (joc-www)]
+;;  (with-open [page stream]
+;;    (println (.readLine page))
+;;    (print "The stream will close now..."))
+;;  (println "but lets read from it anyway.")
+;;  (.readLine stream))
+
+(defmacro with-resource [binding close-fn & body]
+  `(let ~binding
+     (try
+       (do ~@body)
+       (finally
+         (~close-fn ~(binding 0))))))
+
+;;(let [stream (joc-www)]
+;;  (with-resource [page stream]
+;;    #(.close %)
+;;    (.readLine page)))
+
+;;;;;;;;;;;;;;;;;; contract macro ;;;;;;;;;;;;;;;;;;;;;;
+
+(declare collect-bodies)
+(defmacro contract [name & forms]
+  (list* `fn name (collect-bodies forms)))
+
+(declare build-contract)
+(defn collect-bodies [forms]
+  (for [form (partition 3 forms)]
+    (build-contract form)))
+
+(defn build-contract [c]
+  (let [args (first c)]
+    (list
+     (into '[f] args)
+     (apply merge
+            (for [con (rest c)]
+              (cond (= (first con) 'require)
+                    (assoc {} :pre (vec (rest con)))
+                    (= (first con) 'ensure)
+                    (assoc {} :post (vec (rest con)))
+                    :else (throw (Exception.
+                                  (str "Unknown tag "
+                                       (first con)))))))
+     (list* 'f args))))
+
+(def doubler-contract
+  (contract doubler
+            [x]
+            (require
+             (pos? x))
+            (ensure
+             (= (* 2 x) %))
+            [x y]
+            (require
+             (pos? x)
+             (pos? y))
+            (ensure
+             (= (* 2 (+ x y)) %))))
+
+(def times2 (partial doubler-contract #(* 2 %)))
+
+(times2 10)
+
+(def times3 (partial doubler-contract #(* 3 %)))
+
+;;(times3 9)
+
+((partial doubler-contract #(* 2 (+ %1 %2))) 2 3)
