@@ -107,3 +107,60 @@
 
 (board-map deref board)
 ;; => [[:- :- :-] [:- :k :-] [:k :- :-]]
+
+;;;;;;;;;;;;; refs ;;;;;;;;;;;;;;;;;
+
+(defn make-move-v2 []
+  (dosync
+   (let [move (choose-move @to-move)]
+     (move-piece move @to-move)
+     (update-to-move move))))
+
+(reset-board!)
+;; => #'ch10-mutation-concurrency.core/num-moves
+(make-move)
+;; => [[:k [0 1]] [:K [1 1]]]
+
+(board-map deref board)
+;; => [[:- :k :-] [:- :K :-] [:- :- :-]]
+
+@num-moves
+;; => 1
+
+(dothreads! make-move-v2 :threads 100 :times 100)
+;; => nil
+
+(board-map #(dosync (deref %)) board)
+;; => [[:- :- :-] [:- :- :k] [:- :- :K]]
+
+@to-move
+
+@num-moves
+;; => 10001
+;; => 10001
+
+(defn stress-ref
+  [r]
+  (let [slow-tries (atom 0)]
+    (future
+      (dosync
+       (swap! slow-tries inc)
+       (Thread/sleep 200)
+       @r)
+      (println (format "r is: %s, history: %d, after %d tries" @r (.getHistoryCount r) @slow-tries)))
+    (dotimes [i 500]
+      (Thread/sleep 10)
+      (dosync (alter r inc)))
+    :done))
+
+(stress-ref (ref 0))
+;; => :done
+;; => r is: 500, history: 10, adter 27 tries
+
+(stress-ref (ref 0 :max-history 30))
+;; => :done
+;; => r is: 407, history: 20, after 21 tries
+
+(stress-ref (ref 0 :min-history 15 :max-history 30))
+;; => r is: 116, history: 20, after 6 tries
+;; => :done
