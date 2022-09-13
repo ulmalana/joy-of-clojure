@@ -164,3 +164,99 @@
 (stress-ref (ref 0 :min-history 15 :max-history 30))
 ;; => r is: 116, history: 20, after 6 tries
 ;; => :done
+
+;;;;;;;;;;;;;;;;;;;;; agents ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def joy (agent []))
+
+
+(send joy conj "First edition")
+;; => #agent[{:status :ready, :val ["First edition"]} 0x5a94ee47]
+
+@joy
+;; => ["First edition"]
+
+(defn slow-conj
+  [coll item]
+  (Thread/sleep 1000)
+  (conj coll item))
+
+(send joy slow-conj "Second edition")
+;; => #agent[{:status :ready, :val ["First edition"]} 0x7c084410]
+
+@joy
+;; => ["First edition" "Second edition"]
+
+(def log-agent (agent 0))
+
+(defn do-log
+  [msg-id message]
+  (println msg-id ":" message)
+  (inc msg-id))
+
+(defn do-step
+  [channel message]
+  (Thread/sleep 1)
+  (send-off log-agent do-log (str channel message)))
+
+(defn three-step
+  [channel]
+  (do-step channel " ready to begin (step 0)")
+  (do-step channel " warming up (step 1)")
+  (do-step channel " really getting goinf now (step 2)")
+  (do-step channel " don! (step 3)"))
+
+(defn all-together-now
+  []
+  (dothreads! #(three-step "alpha"))
+  (dothreads! #(three-step "beta"))
+  (dothreads! #(three-step "omega")))
+
+(all-together-now)
+;; 0 : omega ready to begin (step 0)
+;; 1 : alpha ready to begin (step 0)
+;; 2 : beta ready to begin (step 0)
+;; 3 : omega warming up (step 1)
+;; 4 : omega really getting goinf now (step 2)
+;; 5 : alpha warming up (step 1)
+;; 6 : beta warming up (step 1)
+;; 7 : omega don! (step 3)
+;; 8 : beta really getting goinf now (step 2)
+;; 9 : alpha really getting goinf now (step 2)
+;; 10 : beta don! (step 3)
+;; 11 : alpha don! (step 3)
+
+@log-agent
+;; => 12
+
+(do-step "important: " "this must go out")
+;; => #agent[{:status :ready, :val 13} 0x7fc5efc]
+(await log-agent)
+;; => nil
+
+(send log-agent (fn [_] 1000))
+;; => #agent[{:status :ready, :val 1000} 0x7fc5efc]
+
+(do-step "epsilon " "near miss")
+;; => #agent[{:status :ready, :val 1001} 0x7fc5efc]
+
+(defn exercise-agents
+  [send-fn]
+  (let [agents (map #(agent %) (range 10))]
+    (doseq [a agents]
+      (send-fn a (fn [_] (Thread/sleep 1000))))
+    (doseq [a agents]
+      (await a))))
+;; => #'ch10-mutation-concurrency.core/exercise-agents
+
+(time (exercise-agents send-off))
+;; "Elapsed time: 1003.575077 msecs"
+
+(time (exercise-agents send))
+;; "Elapsed time: 2003.277304 msecs"
+
+(defn handle-log-error
+  [the-agent the-err]
+  (println "An action sent to the log-agent threw " the-err))
+
+
