@@ -259,4 +259,77 @@
   [the-agent the-err]
   (println "An action sent to the log-agent threw " the-err))
 
+;;;;;;;;;;;;;;;;;;;;;;;;; atoms ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(def ^:dynamic *time* (atom 0))
+
+(defn tick
+  []
+  (swap! *time* inc))
+
+(dothreads! tick :threads 1000 :times 100)
+
+@*time*
+;; => 100000
+
+(defn manipulable-memoize
+  [function]
+  (let [cache (atom {})]
+    (with-meta
+      (fn [& args]
+        (or (second (find @cache args))
+            (let [ret (apply function args)]
+              (swap! cache assoc args ret)
+              ret)))
+      {:cache cache})))
+
+(def slowly (fn [x] (Thread/sleep 1000) x))
+
+(time [(slowly 9) (slowly 9)])
+;; => "Elapsed time: 2006.025298 msecs"
+;; => [9 9]
+
+(def sometimes-slowly (manipulable-memoize slowly))
+;; => #'ch10-mutation-concurrency.core/sometimes-slowly
+
+(time [(sometimes-slowly 108) (sometimes-slowly 108)])
+;; => "Elapsed time: 1007.87787 msecs"
+;; => [108 108]
+
+(meta sometimes-slowly)
+;; => {:cache #atom[{(108) 108} 0x56320c8e]}
+
+(let [cache (:cache (meta sometimes-slowly))]
+  (swap! cache dissoc '(108)))
+;; => {}
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;; vars ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+*read-eval*
+
+(var *read-eval*)
+;; => #'clojure.core/*read-eval*
+
+(defn print-read-eval
+  []
+  (println "*read-eval* is currently" *read-eval*))
+
+(defn binding-play
+  []
+  (print-read-eval)
+  (binding [*read-eval* false]
+    (print-read-eval))
+  (print-read-eval))
+
+(binding-play)
+;; *read-eval* is currently true
+;; *read-eval* is currently false
+;; *read-eval* is currently true
+
+(def x 55)
+;; => #'ch10-mutation-concurrency.core/x
+{:outer-var-value x
+ :with-locals (with-local-vars [x 9]
+                {:local-var x
+                 :local-var-value (var-get x)})}
+;; => {:outer-var-value 55, :with-locals {:local-var #<Var: --unnamed-->, :local-var-value 9}}
