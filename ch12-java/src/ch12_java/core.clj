@@ -250,3 +250,178 @@ sary
   (.start (Thread. #(.run f)))
   (.get f))
 ;; => 42
+
+;;;;;;;;;; java.util.List interface
+(.get '[a b c] 1)
+;; => b
+
+(.get (repeat :a) 138)
+;; => :a
+
+(.containsAll '[a b c] '[a b])
+;; => true
+
+(.add '[a b c] 'd)
+;; => Execution error (UnsupportedOperationException)
+
+;;;;;;;;;;; java.lang.Comparable interface
+(.compareTo [:a] [:a])
+;; => 0
+
+(.compareTo [:a :b] [:a])
+;; => 1
+
+(.compareTo [:a :b] [:a :b :c])
+;; => -1
+
+(sort [[:a :b :c] [:a] [:a :b]])
+;; => ([:a] [:a :b] [:a :b :c])
+
+;;;;;;;;;;;; java.util.RandomAccess interface
+(.get '[a b c] 2)
+;; => c
+
+;;;;;;;;;;; java.util.Collections interface
+(defn shuffle'
+  [coll]
+  (seq (doto (java.util.ArrayList. coll)
+         java.util.Collections/shuffle)))
+;; => #'ch12-java.core/shuffle'
+
+(shuffle' (range 10))
+;; => (6 9 5 8 4 2 1 3 0 7)
+
+;;;;;;;;;;; java.util.Map interface
+(java.util.Collections/unmodifiableMap
+ (doto (java.util.HashMap.) (.put :a 1)))
+;; => {:a 1}
+
+(into {} (doto (java.util.HashMap.) (.put :a 1)))
+;; => {:a 1}
+
+(def x (java.awt.Point. 0 0))
+(def y (java.awt.Point. 0 42))
+(def points #{x y})
+points
+;; => #{#object[java.awt.Point 0x2827fb5f "java.awt.Point[x=0,y=0]"] #object[java.awt.Point 0x4eb975b2 "java.awt.Point[x=0,y=42]"]}
+
+(.setLocation y 0 0)
+points
+;; => #{#object[java.awt.Point 0x2827fb5f "java.awt.Point[x=0,y=0]"] #object[java.awt.Point 0x4eb975b2 "java.awt.Point[x=0,y=0]"]}
+
+;;;;;;; interface ;;;;;;
+(definterface ISliceable
+  (slice [^long s ^long e])
+  (^long sliceCount []))
+;; => ch12_java.core.ISliceable
+
+(def dumb
+  (reify ch12_java.core.ISliceable
+    (slice [_ s e] [:empty])
+    (sliceCount [_] 42)))
+;; => #'ch12-java.core/dumb
+
+(.slice dumb 1 2)
+;; => [:empty]
+
+(.sliceCount dumb)
+;; => 42
+
+(defprotocol Sliceable
+  (slice [this s e])
+  (sliceCount [this]))
+;; => Sliceable
+
+(extend ch12_java.core.ISliceable
+  Sliceable
+  {:slice (fn [this s e] (.slice this s e))
+   :sliceCount (fn [this] (.sliceCount this))})
+;; => nil
+
+(sliceCount dumb)
+;; => 42
+
+(slice dumb 0 0)
+;; => [:empty]
+
+(defn calc-slice-count
+  [thing]
+  "Calculates the number of possible slices using the formula:
+(n + r - 1)!
+------------
+ r! (n - 1)!
+where n is (count thing) and r is 2"
+  (let [! #(reduce * (take % (iterate inc 1)))
+        n (count thing)]
+    (/ (! (- (+ n 2) 1))
+       (* (! 2) (! (- n 1))))))
+;; => #'ch12-java.core/calc-slice-count
+
+(extend-type String
+  Sliceable
+  (slice [this s e] (.substring this s (inc e)))
+  (sliceCount [this] (calc-slice-count this)))
+;; => nil
+
+(slice "abc" 0 1)
+;; => "ab"
+
+(sliceCount "abc")
+;; => 6
+
+(defmacro pairs
+  [& args]
+  (if (even? (count args))
+    `(partition 2 '~args)
+    (throw (Exception. (str "pairs requires an even number of args")))))
+;; => #'ch12-java.core/pairs
+
+(pairs 1 2 3)
+;; => Syntax error macroexpanding pairs at (src/ch12_java/core.clj:379:1).
+;; => pairs requires an even number of args
+
+(pairs 1 2 3 4)
+;; => ((1 2) (3 4))
+
+(defmacro -?>
+  [& forms]
+  `(try (-> ~@forms)
+        (catch NullPointerException _# nil)))
+;; => #'ch12-java.core/-?>
+
+(-?> 25 Math/sqrt (+ 100))
+;; => 105.0
+
+(-?> 25 Math/sqrt (and nil) (+ 100))
+;; => nil
+
+(defn perform-unclean-act
+  [x y]
+  (/ x y))
+;; => #'ch12-java.core/perform-unclean-act
+
+(try
+  (perform-unclean-act 42 0)
+  (catch RuntimeException ex
+    (println (str "something went wrong"))))
+;; => nil
+;; something went wrong
+
+(defn perform-cleaner-act
+  [x y]
+  (try
+    (/ x y)
+    (catch ArithmeticException ex
+      (throw (ex-info "You attempted an unclean act"
+                      {:args [x y]})))))
+;; => #'ch12-java.core/perform-cleaner-act
+
+(try
+  (perform-cleaner-act 108 0)
+  (catch RuntimeException ex
+    (println (str "Received error: " (.getMessage ex)))
+    (when-let [ctx (ex-data ex)]
+      (println (str "More information: " ctx)))))
+;; => nil
+;; Received error: You attempted an unclean act
+;; More information: {:args [108 0]}
