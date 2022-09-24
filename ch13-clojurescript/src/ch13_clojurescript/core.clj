@@ -104,6 +104,7 @@ code-data
          "var DummyClass={};\n"
          (map #(str "DummyClass." % "=function(){};\n")
               syms)))
+;; => #'ch13-clojurescript.core/externs-for-interop
 ;; => 
 
 ;; (spit "externs.js" (externs-for-interop (get-interop-used flat-ast)))
