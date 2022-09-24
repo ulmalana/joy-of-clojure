@@ -12,8 +12,14 @@
                        :jvm-opts ["-Dclojure.compiler.direct-linking=true"]}}
   :cljsbuild
   {:builds
-   [{:source-paths ["src"]
+   [;;{:source-paths ["src"]
+     ;;:compiler
+     ;;{:output-to "dev-target/all.js"
+     ;; :optimizations :whitespace
+      ;;:pretty-print true}}
+    {:source-paths ["src"]
      :compiler
-     {:output-to "dev-target/all.js"
-      :optimizations :whitespace
-      :pretty-print true}}]})
+     {:output-to "prod-target/all.js"
+      :optimizations :advanced
+      :externs ["externs.js"]
+      :pretty-print false}}]})

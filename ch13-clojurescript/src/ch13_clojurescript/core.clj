@@ -2,7 +2,9 @@
   (:require [cljs.compiler :as comp]
             [cljs.analyzer :as ana]
             [clojure.walk :refer [prewalk]]
-            [clojure.pprint :refer [pprint]])
+            [clojure.pprint :refer [pprint]]
+            [clojure.java.io :as io])
+  (:import (clojure.lang LineNumberingPushbackReader))
   (:gen-class))
 
 (defn -main
@@ -66,3 +68,42 @@ code-data
 ;; cljs.user.hello = (function cljs$user$hello(x) {
 ;;     return alert(cljs.user.pr_str.call(null,new cljs.core.Symbol(null,"greetings","greetings",-547008995,null),x));
 ;; });
+
+(defn read-file
+  "Read the contents of filename as a seq of clojure values"
+  [filename]
+  (let [eof (Object.)]
+    (with-open [reader (LineNumberingPushbackReader. (io/reader filename))]
+      (doall
+       (take-while #(not= % eof)
+                   (repeatedly #(read reader false eof)))))))
+
+(defn file-ast
+  "Return the clojurescript AST for the contents of filename. Tends to be large
+  and contain cycles -- be careful printing at the repl."
+  [filename]
+  (binding [ana/*cljs-ns* 'cljs.user
+            ana/*cljs-file* filename]
+    (mapv #(ana/analyze (ana/empty-env) %)
+          (read-file filename))))
+
+(defn flatten-ast
+  [ast]
+  (mapcat #(tree-seq :children :children %) ast))
+
+(def flat-ast (flatten-ast (file-ast "src/joy/music.cljs")))
+
+(defn get-interop-used
+  "Return a set of symbols representing the method and field names used indentinterop forms"
+  [flat-ast]
+  (set (keep #(some % [:method :field]) flat-ast)))
+
+(defn externs-for-interop
+  [syms]
+  (apply str
+         "var DummyClass={};\n"
+         (map #(str "DummyClass." % "=function(){};\n")
+              syms)))
+;; => 
+
+;; (spit "externs.js" (externs-for-interop (get-interop-used flat-ast)))

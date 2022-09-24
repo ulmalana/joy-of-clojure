@@ -1,10 +1,10 @@
-(ns ch13-clojurescript.music)
+(ns joy.music)
 
 (defn soft-attack
   "Return a gain node that goes from silent at time <delay> up to
   <volume> in 50 ms, then ramps back down to silent after <duration>"
   [ctx {:keys [volume delay duration]}]
-  (let [node (.createGainNode ctx)]
+  (let [node (.createGain ctx)]
     (doto (.-gain node)
       (.linearRampToValueAtTime 0 delay)
       (.linearRampToValueAtTime volume (+ delay 0.05))
@@ -17,8 +17,8 @@
   (let [node (.createOscillator ctx)]
     (set! (-> node .-frequency .-value) 440)
     (set! (-> node .-detune .-value) (- cent 900))
-    (.noteOn node delay)
-    (.noteOff node (+ delay duration))
+    (.start node delay)
+    (.stop node (+ delay duration))
     node))
 
 (defn connect-to
@@ -93,5 +93,5 @@
     [[26 4] [25 2] [24 4] [20 2] [24 3] [23 1] [22 2] [10 4]
      [19 2] [16 10]])))
 
-(defn go []
+(defn ^:export go []
   (play! woo (magical-theme)))
