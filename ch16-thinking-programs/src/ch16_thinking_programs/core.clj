@@ -1,6 +1,9 @@
 (ns ch16-thinking-programs.core
   (:require [clojure.set :as set]
-            [clojure.walk :as walk])
+            [clojure.walk :as walk]
+            [clojure.core.logic.pldb :as pldb]
+            [clojure.core.logic.fd :as fd]
+            [clojure.core.logic :as logic])
   (:gen-class))
 
 (defn -main
@@ -246,3 +249,123 @@
 
 (meld '(1 ?x) '(?y (?y 2)))
 ;; => (1 (1 2))
+
+;;;;;;;;;;; core.logic ;;;;;;;;;;;;;;
+(logic/run* [answer] (logic/== answer 5))
+;; => (5)
+
+(logic/run* [val1 val2]
+  (logic/== {:a val1, :b 2}
+            {:a 1, :b val2}))
+;; => ([1 2])
+
+(logic/run* [x y]
+  (logic/== x y))
+;; => ([_0 _0])
+
+(logic/run* [q]
+  (logic/== q 1)
+  (logic/== q 2))
+;; => ()
+
+(logic/run* [george]
+  (logic/conde
+   [(logic/== george :born)]
+   [(logic/== george :unborn)]))
+;; => (:born :unborn)
+
+(pldb/db-rel orbits orbital body)
+;; => #'ch16-thinking-programs.core/orbits
+
+(def facts
+  (pldb/db
+   [orbits :mercury :sun]
+   [orbits :venus :sun]
+   [orbits :earth :sun]
+   [orbits :mars :sun]
+   [orbits :jupiter :sun]
+   [orbits :saturn :sun]
+   [orbits :uranus :sun]
+   [orbits :neptune :sun]))
+;; => #'ch16-thinking-programs.core/facts
+
+(pldb/with-db facts
+  (doall (logic/run* [q]
+           (logic/fresh [orbital body]
+             (orbits orbital body)
+             (logic/== q orbital)))))
+;; => (:saturn :earth :uranus :neptune :mars :jupiter :venus :mercury)
+
+
+;;;;;; constraint programming ;;;;;;
+(defn doubler [n] (* n 2))
+
+(defn rowify [board]
+  (->> board
+       (partition 9)
+       (map vec)
+       vec))
+
+
+(rowify b1)
+;; [[3 - - - - 5 - 1 -]
+;;  [- 7 - - - 6 - 3 -]
+;;  [1 - - - 9 - - - -]
+;;  [7 - 8 - - - - 9 -]
+;;  [9 - - 4 - 8 - - 2]
+;;  [- 6 - - - - 5 - 1]
+;;  [- - - - 4 - - - 6]
+;;  [- 4 - 7 - - - 2 -]
+;;  [- 2 - 6 - - - - 3]]
+
+(defn colify [rows]
+  (apply map vector rows))
+
+
+(colify (rowify b1))
+;; => ([3 - 1 7 9 - - - -] [- 7 - - - 6 - 4 2] [- - - 8 - - - - -] [- - - - 4 - - 7 6] [- - 9 - - - 4 - -] [5 6 - - 8 - - - -] [- - - - - 5 - - -] [1 3 - 9 - - - 2 -] [- - - - 2 1 6 - 3])
+
+(defn subgrid [rows]
+  (partition 9
+             (for [row (range 0 9 3)
+                   col (range 0 9 3)
+                   x (range row (+ row 3))
+                   y (range col (+ col 3))]
+               (get-in rows [x y]))))
+
+(subgrid (rowify b1))
+;; => ((3 - - - 7 - 1 - -) (- - 5 - - 6 - 9 -) (- 1 - - 3 - - - -) (7 - 8 9 - - - 6 -) (- - - 4 - 8 - - -) (- 9 - - - 2 5 - 1) (- - - - 4 - - 2 -) (- 4 - 7 - - 6 - -) (- - 6 - 2 - - - 3))
+
+(def logic-board #(repeatedly 81 logic/lvar))
+
+(defn init [[lv & lvs] [cell & cells]]
+  (if lv
+    (logic/fresh []
+      (if (= '- cell)
+        logic/succeed
+        (logic/== lv cell))
+      (init lvs cell))
+    logic/succeed))
+
+(defn solve-logically [board]
+  (let [legal-nums (fd/interval 1 9)
+        lvars (logic-board)
+        rows (rowify lvars)
+        cols (colify rows)
+        grids (subgrid rows)]
+    (logic/run 1 [q]
+      (init lvars board)
+      (logic/everyg #(fd/in % legal-nums) lvars)
+      (logic/everyg fd/distinct rows)
+      (logic/everyg fd/distinct cols)
+      (logic/everyg fd/distinct grids)
+      (logic/== q lvars))))
+
+;; error
+;; (-> b1
+;;     solve-logically
+;;     first
+;;     prep
+;;     print-board)
+;; => 
+;; => 
