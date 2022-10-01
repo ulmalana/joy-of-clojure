@@ -1,6 +1,10 @@
 (ns ch17-last-ch.core
-  (:require [clojure.set :as ra])
+  (:require [clojure.set :as ra]
+            [clojure [xml :as xml]]
+            [clojure [zip :as zip]]
+            [clojure.test :refer (deftest testing is)])
   (:use [clojure.string :as str :only []])
+  (:import (java.util.regex Pattern))
   (:gen-class))
 
 (defn -main
@@ -124,3 +128,77 @@
 
 (example-query 9)
 ;; => {:query "SELECT a, b, c FROM X LEFT JOIN Y ON (X.a = Y.b) WHERE ((a < 5) AND (b < ?))", :bindings [9]}
+
+(defn feed->zipper [uri-str]
+  (->> (xml/parse uri-str)
+       zip/xml-zip))
+
+(defn normalize [feed]
+  (if (= :feed (:tag (first feed)))
+    feed
+    (zip/down feed)))
+
+(defn feed-children [uri-str]
+  (->> uri-str
+       feed->zipper
+       normalize
+       zip/children
+       (filter (comp #{:item :entry} :tag))))
+
+(def stubbed-feed-children
+  (constantly [{:content [{:tag :title
+                           :content ["Stub"]}]}]))
+
+(defn count-feed-entries [url]
+  (count (feed-children url)))
+
+(count-feed-entries "http://blog.fogus.me/feed/")
+;; => 5
+
+(with-redefs [feed-children stubbed-feed-children]
+  (count-feed-entries "dummy url"))
+;; => 1
+
+(defn title [entry]
+  (some->> entry
+           :content
+           (some #(when (= :title (:tag %)) %))
+           :content
+           first))
+
+(defn count-text-task [extractor txt feed]
+  (let [items (feed-children feed)
+        re (Pattern/compile (str "(?i)" txt))]
+    (->> items
+         (map extractor)
+         (mapcat #(re-seq re %))
+         count)))
+
+(deftest feed-tests
+  (with-redefs [feed-children stubbed-feed-children]
+    (testing "Child counting"
+      (is (= 1000 (count-feed-entries "Dummy url"))))
+    (testing "Ocurrence counting"
+      (is (= 0 count-text-task
+             title
+             "ZOMG"
+             "Dummy url")))))
+
+(clojure.test/run-tests 'ch17-last-ch.core)
+
+;; Testing ch17-last-ch.core
+
+;; FAIL in (feed-tests) (core.clj:180)
+;; Child counting
+;; expected: (= 1000 (count-feed-entries "Dummy url"))
+;; actual: (not (= 1000 1))
+
+;; FAIL in (feed-tests) (core.clj:182)
+;; Ocurrence counting
+;; expected: (= 0 count-text-task title "ZOMG" "Dummy url")
+;; actual: (not (= 0 #function[ch17-last-ch.core/count-text-task] #function[ch17-last-ch.core/title] "ZOMG" "Dummy url"))
+
+;; Ran 1 tests containing 2 assertions.
+;; 2 failures, 0 errors.
+;; {:test 1, :pass 0, :fail 2, :error 0, :type :summary}
+
