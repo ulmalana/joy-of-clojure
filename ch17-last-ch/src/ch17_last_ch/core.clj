@@ -202,3 +202,235 @@
 ;; 2 failures, 0 errors.
 ;; {:test 1, :pass 0, :fail 2, :error 0, :type :summary}
 
+
+(defmacro defformula [nm bindings & formula]
+  `(let ~bindings
+     (let [formula# (agent ~@formula)
+           update-fn# (fn [key# ref# o# n#]
+                        (send formula# (fn [_#] ~@formula)))]
+       (doseq [r# ~(vec (map bindings
+                             (range 0 (count bindings) 2)))]
+         (add-watch r# :update-formula update-fn#))
+       (def ~nm formula#))))
+
+(def h (ref 25))
+(def ab (ref 100))
+
+(defformula avg
+  [at-bats ab, hits h]
+  (float (/ @hits @at-bats)))
+
+@avg
+;; => 0.25
+
+(dosync (ref-set h 33))
+;; => 33
+
+@avg
+;; => 0.33
+
+(def config
+  '{:systems {:pump {:type :feeder, :descr "Feeder system"}
+              :sim1 {:type :sim, :fidelity :low}
+              :sim2 {:type :sim, :fidelity :high, :threads 2}}})
+
+(defn describe-system [name cfg]
+  [(:type cfg) (:fidelity cfg)])
+
+(describe-system :pump {:type :feeder, :descr "Feeder system"})
+;; => [:feeder nil]
+
+(defmulti construct describe-system)
+
+(defmethod construct :default [name cfg]
+  {:name name
+   :type (:type cfg)})
+
+(defn construct-subsystem [sys-map]
+  (for [[name cfg] sys-map]
+    (construct name cfg)))
+
+(construct-subsystem (:systems config))
+;; => ({:name :pump, :type :feeder} {:name :sim1, :type :sim} {:name :sim2, :type :sim})
+
+(defmethod construct [:feeder nil]
+  [_ cfg]
+  (:descr cfg))
+
+(construct-subsystem (:systems config))
+;; => ("Feeder system" {:name :sim1, :type :sim} {:name :sim2, :type :sim})
+
+(defrecord LowFiSim [name])
+(defrecord HiFiSim [name threads])
+
+(defmethod construct [:sim :low]
+  [name cfg]
+  (->LowFiSim name))
+
+(defmethod construct [:sim :high]
+  [name cfg]
+  (->HiFiSim name (:threads cfg)))
+
+(construct-subsystem (:systems config))
+;; => ("Feeder system" #ch17_last_ch.core.LowFiSim{:name :sim1} #ch17_last_ch.core.HiFiSim{:name :sim2, :threads 2})
+
+(def lofi {:type :sim, :descr "Lowfi sim", :fidelity :low})
+(def hifi {:type :sim, :descr "Hifi sim", :fidelity :high, :threads 2})
+
+(construct :lofi lofi)
+;; => #ch17_last_ch.core.LowFiSim{:name :lofi}
+
+(defprotocol Sys
+  (start! [sys])
+  (stop! [sys]))
+
+(defprotocol Sim
+  (handle [sim msg]))
+
+(defn build-system [name config]
+  (let [sys (construct name config)]
+    (start! sys)
+    sys))
+
+(extend-type LowFiSim
+  Sys
+  (start! [this]
+    (println "Started a lofi simulator"))
+  (stop! [this]
+    (println "Stopped a lofi simulator"))
+  Sim
+  (handle [this msg]
+    (* (:weight msg) 3.14)))
+
+(start! (construct :lofi lofi))
+;; Started a lofi simulator
+;; => nil
+
+(build-system :sim1 lofi)
+;; Started a lofi simulator
+;; => #ch17_last_ch.core.LowFiSim{:name :sim1}
+
+(handle (build-system :sim1 lofi) {:weight 42})
+;; => 131.88
+
+(extend-type HiFiSim
+  Sys
+  (start! [this] (println "Started a hifi simulator"))
+  (stop! [this] (println "stopped a hifi simulator"))
+
+  Sim
+  (handle [this msg]
+    (Thread/sleep 5000)
+    (* (:weight msg) Math/PI)))
+
+(build-system :sim2 hifi)
+;; => #ch17_last_ch.core.HiFiSim{:name :sim2, :threads 2}
+
+(handle (build-system :sim2 hifi) {:weight 42})
+;; => 131.94689145077132
+
+(def excellent (promise))
+
+(defn simulate [answer fast slow opts]
+  (future (deliver answer (handle slow opts)))
+  (handle fast opts))
+
+(simulate excellent
+          (build-system :sim1 lofi)
+          (build-system :sim2 hifi)
+          {:weight 42})
+;; => 131.88
+
+(defrecord MockSim [name])
+
+(def starts (atom 0))
+
+(extend-type MockSim
+  Sys
+  (start! [this]
+    (if (= 1 (swap! starts inc))
+      (println "Started a mock simulator")
+      (throw (RuntimeException. "Called start! more than once"))))
+  (stop! [this] (println "Stopped a mock simulator"))
+  Sim
+  (handle [_ _] 42))
+
+(defmethod construct [:mock nil]
+  [nom _]
+  (MockSim. nom))
+
+(defn initialize [name cfg]
+  (let [lib (:lib cfg)]
+    (require lib)
+    (build-system name cfg)))
+
+(defn traverse [node f]
+  (when node
+    (f node)
+    (doseq [child (:content node)]
+      (traverse child f))))
+
+(def DB
+  (-> "<zoo>
+         <pongo>
+            <animal>orangutan</animal>
+         </pongo>
+         <panthera>
+            <animal>Spot</animal>
+            <animal>lion</animal>
+            <animal>Lopshire</animal>
+         </panthera>
+       </zoo>"
+      .getBytes
+      (java.io.ByteArrayInputStream.)
+      xml/parse))
+
+(defn ^:dynamic handle-weird-animal
+  [{[name] :content}]
+  (throw (Exception. (str name " must be a 'dealt with'"))))
+
+(defmulti visit :tag)
+
+(defmethod visit :animal [{[name] :content :as animal}]
+  (case name
+    "Spot" (handle-weird-animal animal)
+    "Lopshire" (handle-weird-animal animal)
+    (println name)))
+
+;; (traverse DB visit)
+;; => 
+
+(defn readr [prompt exit-code]
+  (let [input (clojure.main/repl-read prompt exit-code)]
+    (if (= input ::tl)
+      exit-code
+      input)))
+
+(defmacro local-context []
+  (let [symbols (keys &env)]
+    (zipmap (map (fn [sym] `(quote ~sym))
+                 symbols)
+            symbols)))
+
+(defn contextual-eval [ctx expr]
+  (eval
+   `(let [~@(mapcat (fn [[k v]] [k `'~v]) ctx)]
+      ~expr)))
+
+(defmacro break []
+  `(clojure.main/repl
+    :prompt #(print "debug=> ")
+    :read readr
+    :eval (partial contextual-eval (local-context))))
+
+(defn keys-apply [f ks m]
+  (break)
+  (let [only (select-keys m ks)]
+    (break)
+    (zipmap (keys only) (map f (vals only)))))
+
+(defmacro awhen [expr & body]
+  (break)
+  `(let [~'it ~expr]
+     (if ~'it
+       (do (break) ~@body))))
